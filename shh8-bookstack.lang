@@ -1,0 +1,97 @@
+[en-us]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[zh-cn]
+name = "BookStack"
+auth = "shh"
+descript = "所见即所得的知识库 / 维基：书籍-章节-页面三层结构，适合记录服务配置与运维文档。"
+release_note = "1. 首次发布。"
+important = "需要先在 TOS 应用中心安装并启用 DockerEngine。"
+
+[zh-hk]
+name = "BookStack"
+auth = "shh"
+descript = "所见即所得的知识库 / 维基：书籍-章节-页面三层结构，适合记录服务配置与运维文档。"
+release_note = "1. 首次發佈。"
+important = "需要先在 TOS 應用中心安裝並啟用 DockerEngine。"
+
+[fr-fr]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[de-de]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[it-it]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[es-es]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[hu-hu]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[ja-jp]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[ko-kr]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[pl-pl]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[ru-ru]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[tr-tr]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."
+
+[pt-pt]
+name = "BookStack"
+auth = "shh"
+descript = "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages."
+release_note = "1. Initial release."
+important = "Requires DockerEngine from the TOS App Center."

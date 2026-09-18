@@ -1,0 +1,102 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "[0-9]*"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "目标架构（Deb 应用用）"
+        required: true
+        default: "x86_64"
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析并校验版本号
+        id: meta
+        run: |
+          set -euo pipefail
+          APPID=$(python3 -c "import json;print(json.load(open('config.ini'))['id'])")
+          VER=$(python3 -c "import json;print(json.load(open('config.ini'))['version'])")
+          echo "appid=$APPID" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            # 指引 10.2 Step 3：tag 与 config.ini 的 version 必须完全一致（前缀 v 可选）
+            if [ "${TAG#v}" != "$VER" ]; then
+              echo "::error::tag(${TAG}) 与 config.ini 的 version(${VER}) 不一致，平台会拒绝"
+              exit 1
+            fi
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$VER" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 守卫 —— 已存在的 Release 一律拒绝覆盖
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          # 坑 11：重新构建会改变 deb 内嵌时间戳 → sha256 变化 → 平台 checksum mismatch
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG 已存在。禁止覆盖 —— 覆盖会改变资产哈希，导致平台校验失败。请改用新的版本号。"
+            exit 1
+          fi
+          echo "Release $TAG 尚不存在，可以继续。"
+
+      - name: 生成 webui.bz2（如需要）
+        run: |
+          set -euo pipefail
+          if [ -d webui ] && [ ! -f webui.bz2 ]; then
+            tar -cjf webui.bz2 -C webui/ .
+            echo "已由 webui/ 生成 webui.bz2"
+          fi
+
+      - name: 构建 Docker 应用包
+        run: |
+          set -euo pipefail
+          chmod +x build.sh
+          ./build.sh
+
+      - name: 检查构建产物
+        id: asset
+        run: |
+          set -euo pipefail
+          APPID="${{ steps.meta.outputs.appid }}"
+          TGZ="build/output/${APPID}.tar.gz"
+          [ -f "$TGZ" ] || { echo "::error::未找到 $TGZ"; exit 1; }
+          [ -f "${TGZ}.sha256" ] || { echo "::error::缺少 ${TGZ}.sha256 伴随文件"; exit 1; }
+          # 指引 6.2：归档根层恰好 4 个文件
+          N=$(tar -tzf "$TGZ" | grep -c '[^/]$')
+          if [ "$N" -ne 4 ]; then
+            echo "::error::归档根层文件数为 ${N}，必须恰好为 4"
+            exit 1
+          fi
+          echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.asset.outputs.tgz }}" \
+            "${{ steps.asset.outputs.tgz }}.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${{ steps.meta.outputs.appid }} ${{ steps.meta.outputs.version }}" \
+            --notes "TOS 7 Docker 应用包。需先在 TOS 应用中心安装并启用 DockerEngine。"

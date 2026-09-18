@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  shh8-bookstack:
+    image: linuxserver/bookstack:26.05.4
+    container_name: shh8-bookstack
+    restart: unless-stopped
+    ports:
+      - "18808:80"
+    user: "1000:1000"
+    volumes:
+      - /Volume*/DockerAppData/shh8-bookstack/data:/config
+    environment:
+      - TZ=Asia/Shanghai
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "500m"
+          memory: 512M
+
+x-app-meta:
+  web:
+    port: 18808
+    protocol: http
