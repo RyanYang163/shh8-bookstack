@@ -19,6 +19,13 @@ on:
 permissions:
   contents: write
 
+env:
+  # 上游版本锁定 —— 升级时改这里，不要用 floating 分支
+  UPSTREAM_REPO: ""
+  UPSTREAM_TAG: ""
+  # 产物是纯静态前端（true）还是自带二进制（false）
+  BUILD_FROM_UPSTREAM: "none"
+
 jobs:
   release:
     runs-on: ubuntu-latest
