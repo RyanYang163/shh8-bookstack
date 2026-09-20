@@ -1,0 +1,10 @@
+{
+  "name": "BookStack",
+  "license": "MIT",
+  "port": 18808,
+  "license_url": "https://raw.githubusercontent.com/BookStackApp/BookStack/development/LICENSE",
+  "healthcheck": "curl -fsS http://localhost:80/ >/dev/null || exit 1",
+  "en": "A simple, self-hosted wiki and documentation platform organised into books, chapters and pages.",
+  "features": "- WYSIWYG editor with Markdown support\n- Books / chapters / pages hierarchy\n- Full-text search across all content\n- Role-based permissions and multi-language UI",
+  "date": "2026-09-20"
+}

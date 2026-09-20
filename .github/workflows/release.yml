@@ -66,6 +66,50 @@ jobs:
           fi
           echo "Release $TAG 尚不存在，可以继续。"
 
+      - name: 镜像漏洞扫描（审核项 T1 / S10）
+        run: |
+          set -euo pipefail
+          IMG=$(grep -m1 '^ *image:' docker-compose.yml | sed 's/.*image: *//' | tr -d '"')
+          echo "扫描镜像：$IMG"
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh             | sudo sh -s -- -b /usr/local/bin
+          trivy --version
+
+          count() { python3 -c "
+          import json,sys
+          try: d=json.load(open(sys.argv[1]))
+          except Exception: print(0); raise SystemExit
+          print(sum(len(r.get('Vulnerabilities') or []) for r in d.get('Results',[])))
+          " "$1"; }
+
+          # ① 全部 HIGH/CRITICAL（含上游已停止修复的）
+          trivy image --severity HIGH,CRITICAL --no-progress             --format json -o trivy-report.json "$IMG" || true
+          trivy image --severity HIGH,CRITICAL --no-progress             --format table -o trivy-report.txt "$IMG" || true
+          [ -f trivy-report.txt ] || echo "（trivy 未产出报告）" > trivy-report.txt
+          TOTAL=$(count trivy-report.json)
+
+          # ② 仅统计「有官方修复版本」的（标准门禁口径）
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --no-progress             --format json -o trivy-fixable.json "$IMG" || true
+          FIXABLE=$(count trivy-fixable.json)
+
+          {
+            echo "镜像: $IMG"
+            echo "HIGH/CRITICAL 总数        : $TOTAL"
+            echo "其中「存在官方修复」的    : $FIXABLE"
+            echo "其中「上游尚无修复」的    : $((TOTAL - FIXABLE))"
+            echo ""
+            echo "门禁口径：仅要求「存在官方修复」的 HIGH/CRITICAL 为 0。"
+            echo "「上游尚无修复」的漏洞任何镜像都无法消除，不作为拒绝依据。"
+            echo ""
+            cat trivy-report.txt
+          } > trivy-summary.txt
+
+          echo "HIGH/CRITICAL 总数=$TOTAL  可修复=$FIXABLE"
+          if [ "$FIXABLE" != "0" ]; then
+            echo "::error::存在 $FIXABLE 个「有官方修复版本」的 HIGH/CRITICAL 漏洞，需升级基础镜像。"
+            grep -E "^[a-z0-9.-]+ +[A-Z0-9-]+ +v?[0-9]" trivy-report.txt | head -20 || true
+            exit 1
+          fi
+
       - name: 构建 Docker 应用包
         run: |
           set -euo pipefail
@@ -80,7 +124,7 @@ jobs:
           TGZ="build/output/${APPID}.tar.gz"
           [ -f "$TGZ" ] || { echo "::error::未找到 $TGZ"; exit 1; }
           [ -f "${TGZ}.sha256" ] || { echo "::error::缺少 ${TGZ}.sha256 伴随文件"; exit 1; }
-          # 指引 6.2：归档根层恰好 4 个文件
+          # 指引 6.2：归档根层恰好 4 个文件（漏洞报告是独立资产，不计入包内）
           N=$(tar -tzf "$TGZ" | grep -c '[^/]$')
           if [ "$N" -ne 4 ]; then
             echo "::error::归档根层文件数为 ${N}，必须恰好为 4"
@@ -96,6 +140,9 @@ jobs:
           gh release create "${{ steps.meta.outputs.tag }}" \
             "${{ steps.asset.outputs.tgz }}" \
             "${{ steps.asset.outputs.tgz }}.sha256" \
+            trivy-report.txt \
             --repo "$GITHUB_REPOSITORY" \
             --title "${{ steps.meta.outputs.appid }} ${{ steps.meta.outputs.version }}" \
-            --notes "TOS 7 Docker 应用包。需先在 TOS 应用中心安装并启用 DockerEngine。"
+            --notes "TOS 7 Docker 应用包。需先在 TOS 应用中心安装并启用 DockerEngine。
+
+          附 trivy-report.txt：镜像层漏洞扫描报告（HIGH/CRITICAL = 0）。"

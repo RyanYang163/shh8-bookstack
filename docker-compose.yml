@@ -1,9 +1,26 @@
+# ============================================================================
+# BookStack — TOS 7 application package
+#
+# Upstream : https://github.com/BookStackApp/BookStack
+# License  : MIT
+# Copyright: upstream project contributors (see https://github.com/BookStackApp/BookStack)
+#
+# This compose file is part of the TOS platform integration only. The image
+# below is published by the upstream project and is used unmodified.
+# Full license text: see LICENSE in the repository root.
+# ============================================================================
 version: "3.8"
 
 services:
   shh8-bookstack:
-    image: linuxserver/bookstack:26.05.4
+    image: linuxserver/bookstack:26.05.5
     container_name: shh8-bookstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
     ports:
       - "18808:80"
