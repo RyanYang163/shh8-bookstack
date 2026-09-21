@@ -11,7 +11,7 @@
 # ============================================================================
 services:
   shh8-bookstack:
-    image: linuxserver/bookstack:26.05.4
+    image: linuxserver/bookstack:26.05.5
     container_name: shh8-bookstack
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:80/ >/dev/null || exit 1"]
@@ -22,11 +22,19 @@ services:
     restart: unless-stopped
     ports:
       - "18808:80"
-    user: "1000:1000"
     volumes:
       - /Volume*/DockerAppData/shh8-bookstack/data:/config
+      - /Volume*/DockerAppData/shh8-bookstack/www:/config/www
     environment:
       - TZ=Asia/Shanghai
+      - PUID=1000
+      - PGID=1000
+      - APP_KEY=base64:QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWY=
+      - DB_HOST=127.0.0.1
+      - DB_PORT=3306
+      - DB_DATABASE=bookstack
+      - DB_USERNAME=bookstack
+      - DB_PASSWORD=bookstack
     security_opt:
       - no-new-privileges:true
     deploy:
