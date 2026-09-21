@@ -63,7 +63,7 @@ See `config.ini` for platform metadata; see `docker-compose.yml` for runtime con
 
 ## Changelog
 
-### v1.0.3 (2026-09-20)
+### v1.0.1 (2026-09-20)
 - Compliance update: added LICENSE / NOTICE / PRIVACY materials,
   declared upstream license inside the package, added container healthcheck
 
