@@ -5,43 +5,213 @@
 # License  : MIT
 # Copyright: upstream project contributors (see https://github.com/BookStackApp/BookStack)
 #
-# This compose file is part of the TOS platform integration only. The image
-# below is published by the upstream project and is used unmodified.
+# This compose file is part of the TOS platform integration only. The images
+# below are published by their upstream projects and used unmodified.
 # Full license text: see LICENSE in the repository root.
+#
+# Two services: the application plus a MariaDB instance that is NOT published
+# to the LAN (no host port) and is reachable only over the private compose
+# network.
+#
+# No credentials are shipped in this file. On first start each service
+# generates its own random secret into the shared `secret/` volume and reuses
+# it on every later start. See README.md §权限与最小化 and PRIVACY.md §4.
+#
+# Least privilege: no privileged mode, no host network, capabilities reduced
+# to an explicit allow-list.
 # ============================================================================
 services:
   shh8-bookstack:
     image: linuxserver/bookstack:26.05.5
     container_name: shh8-bookstack
+    # Wrapper around the image's own /init (s6-overlay). It only prepares the
+    # environment and then hands PID 1 to /init with exec, so s6 starts exactly
+    # as it normally would. `exec /init` must stay the last statement.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+
+        # 1) Wait for the database service to publish the shared password.
+        #    MariaDB initialisation routinely takes longer than the 30s the
+        #    image's own init script waits, so wait here before /init runs.
+        i=0
+        while [ ! -s /secret/db_password ]; do
+          i=$((i + 1))
+          [ "$i" -gt 90 ] && { echo "FATAL: /secret/db_password was never created"; exit 1; }
+          sleep 2
+        done
+
+        # 2) The password existing does not mean the server accepts connections.
+        j=0
+        while ! nc -w1 shh8-bookstack-db 3306 </dev/null >/dev/null 2>&1; do
+          j=$((j+1))
+          [ "$j" -gt 90 ] && { echo "FATAL: database port 3306 never became reachable"; exit 1; }
+          sleep 2
+        done
+
+        # 3) Application encryption key: generated once, then reused.
+        if [ ! -s /config/app_key ]; then
+          k="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+          [ "${#k}" -eq 44 ] || { echo "FATAL: could not generate the application key"; exit 1; }
+          printf '%s' "$k" > /config/app_key.tmp
+          mv /config/app_key.tmp /config/app_key
+        fi
+        k="$(cat /config/app_key)"
+        [ "${#k}" -eq 44 ] || { echo "FATAL: /config/app_key is malformed"; exit 1; }
+
+        DB_PASSWORD="$(cat /secret/db_password)"
+        APP_KEY="base64:${k}"
+        export DB_PASSWORD APP_KEY
+
+        # 4) Mirror the two generated secrets into .env so that commands run
+        #    via `docker exec ... artisan ...` (the upstream README's update-url
+        #    procedure) also see them. The environment variables above remain
+        #    authoritative; this step is best-effort and never fatal.
+        if [ ! -s /config/www/.env ] && [ -f /app/www/.env.example ]; then
+          cp /app/www/.env.example /config/www/.env
+        fi
+        if [ -s /config/www/.env ]; then
+          grep -qF "APP_KEY=${APP_KEY}" /config/www/.env ||
+            sed -i "s|^APP_KEY=.*|APP_KEY=${APP_KEY}|" /config/www/.env || true
+          grep -qF "DB_PASSWORD=${DB_PASSWORD}" /config/www/.env ||
+            sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASSWORD}|" /config/www/.env || true
+        fi
+
+        exec /init
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:80/ >/dev/null || exit 1"]
+      # Probes a page that reads the database, so a broken database surfaces as
+      # "unhealthy" instead of a container that merely looks alive.
+      # busybox wget is always present in this alpine-based image; curl is not.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/login || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 180s
     restart: unless-stopped
     ports:
       - "18808:80"
+    depends_on:
+      shh8-bookstack-db:
+        condition: service_healthy
     volumes:
       - /Volume*/DockerAppData/shh8-bookstack/data:/config
       - /Volume*/DockerAppData/shh8-bookstack/www:/config/www
+      - /Volume*/DockerAppData/shh8-bookstack/secret:/secret
     environment:
       - TZ=Asia/Shanghai
+      # The image's s6 init drops privileges to this UID/GID, so the nginx and
+      # php-fpm worker processes run as uid 1000 rather than root.
       - PUID=1000
       - PGID=1000
-      - APP_KEY=base64:QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWY=
-      - DB_HOST=127.0.0.1
+      - DB_HOST=shh8-bookstack-db
       - DB_PORT=3306
       - DB_DATABASE=bookstack
       - DB_USERNAME=bookstack
-      - DB_PASSWORD=bookstack
+      # DB_PASSWORD and APP_KEY are intentionally absent: both are generated at
+      # first start by the entrypoint above and never ship inside the package.
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Allow-list: Docker's default set minus NET_RAW / SETPCAP / SETFCAP,
+      # none of which this application needs.
+      - AUDIT_WRITE
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
+      - KILL
+      - MKNOD
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+      - SYS_CHROOT
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
           cpus: "0.5"
           memory: 512M
+
+  shh8-bookstack-db:
+    image: mariadb:11.8.9
+    container_name: shh8-bookstack-db
+    # This service is the only producer of the database password. The
+    # application service waits for the file rather than generating its own, so
+    # the two can never disagree.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+
+        gen() {
+          v="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+          [ "${#v}" -eq 44 ] || { echo "FATAL: could not generate $1"; exit 1; }
+          printf '%s' "$v" > "$1.tmp"
+          chmod 600 "$1.tmp"
+          mv "$1.tmp" "$1"
+        }
+
+        [ -s /secret/db_password ] || gen /secret/db_password
+        [ -s /secret/db_root_password ] || gen /secret/db_root_password
+
+        MARIADB_PASSWORD="$(cat /secret/db_password)"
+        MARIADB_ROOT_PASSWORD="$(cat /secret/db_root_password)"
+        export MARIADB_PASSWORD MARIADB_ROOT_PASSWORD
+
+        exec /usr/local/bin/docker-entrypoint.sh mariadbd
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+    volumes:
+      - /Volume*/DockerAppData/shh8-bookstack/db:/var/lib/mysql
+      - /Volume*/DockerAppData/shh8-bookstack/secret:/secret
+    environment:
+      - TZ=Asia/Shanghai
+      - MARIADB_DATABASE=bookstack
+      - MARIADB_USER=bookstack
+      # The image refuses to initialise a fresh data directory unless one of
+      # MARIADB_ROOT_PASSWORD / _HASH / ALLOW_EMPTY_ROOT_PASSWORD /
+      # RANDOM_ROOT_PASSWORD is set. MARIADB_ROOT_PASSWORD is exported by the
+      # entrypoint above; it is never written into this file.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Allow-list: Docker's default set minus NET_RAW / SETPCAP / SETFCAP.
+      - AUDIT_WRITE
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
+      - KILL
+      - MKNOD
+      - SETGID
+      - SETUID
+      - SYS_CHROOT
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1G
 
 x-app-meta:
   web:

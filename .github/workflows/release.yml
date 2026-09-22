@@ -69,9 +69,12 @@ jobs:
       - name: 镜像漏洞扫描（审核项 T1 / S10）
         run: |
           set -euo pipefail
-          IMG=$(grep -m1 '^ *image:' docker-compose.yml | sed 's/.*image: *//' | tr -d '"')
-          echo "扫描镜像：$IMG"
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh             | sudo sh -s -- -b /usr/local/bin
+          # 遍历 compose 里的**全部**镜像：多服务应用（如 shh8 的 app + db）不能只扫第一个
+          IMAGES=$(grep -E '^[[:space:]]*image:' docker-compose.yml | sed 's/.*image:[[:space:]]*//' | tr -d '"' | sort -u)
+          [ -n "$IMAGES" ] || { echo "::error::compose 里找不到 image:"; exit 1; }
+          echo "待扫描镜像："; echo "$IMAGES" | sed 's/^/  - /'
+
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
           trivy --version
 
           count() { python3 -c "
@@ -81,18 +84,36 @@ jobs:
           print(sum(len(r.get('Vulnerabilities') or []) for r in d.get('Results',[])))
           " "$1"; }
 
-          # ① 全部 HIGH/CRITICAL（含上游已停止修复的）
-          trivy image --severity HIGH,CRITICAL --no-progress             --format json -o trivy-report.json "$IMG" || true
-          trivy image --severity HIGH,CRITICAL --no-progress             --format table -o trivy-report.txt "$IMG" || true
-          [ -f trivy-report.txt ] || echo "（trivy 未产出报告）" > trivy-report.txt
-          TOTAL=$(count trivy-report.json)
-
-          # ② 仅统计「有官方修复版本」的（标准门禁口径）
-          trivy image --severity HIGH,CRITICAL --ignore-unfixed --no-progress             --format json -o trivy-fixable.json "$IMG" || true
-          FIXABLE=$(count trivy-fixable.json)
+          : > trivy-report.txt
+          TOTAL=0
+          FIXABLE=0
+          N=0
+          for IMG in $IMAGES; do
+            N=$((N + 1))
+            echo "扫描镜像 $N：$IMG"
+            # 1) 全部 HIGH/CRITICAL（含上游已停止修复的）
+            trivy image --severity HIGH,CRITICAL --no-progress --format json  -o r.json "$IMG" || true
+            trivy image --severity HIGH,CRITICAL --no-progress --format table -o r.txt  "$IMG" || true
+            [ -f r.txt ] || echo "（trivy 未产出报告）" > r.txt
+            # 2) 仅统计「有官方修复版本」的（标准门禁口径）
+            trivy image --severity HIGH,CRITICAL --ignore-unfixed --no-progress --format json -o f.json "$IMG" || true
+            T=$(count r.json); F=$(count f.json)
+            TOTAL=$((TOTAL + T)); FIXABLE=$((FIXABLE + F))
+            {
+              echo "=========== 镜像 $N：$IMG ==========="
+              echo "HIGH/CRITICAL 总数        : $T"
+              echo "其中「存在官方修复」的    : $F"
+              echo "其中「上游尚无修复」的    : $((T - F))"
+              echo ""
+              cat r.txt
+              echo ""
+            } >> trivy-report.txt
+          done
 
           {
-            echo "镜像: $IMG"
+            echo "共扫描 $N 个镜像："
+            echo "$IMAGES" | sed 's/^/  - /'
+            echo ""
             echo "HIGH/CRITICAL 总数        : $TOTAL"
             echo "其中「存在官方修复」的    : $FIXABLE"
             echo "其中「上游尚无修复」的    : $((TOTAL - FIXABLE))"
@@ -100,7 +121,6 @@ jobs:
             echo "门禁口径：仅要求「存在官方修复」的 HIGH/CRITICAL 为 0。"
             echo "「上游尚无修复」的漏洞任何镜像都无法消除，不作为拒绝依据。"
             echo ""
-            cat trivy-report.txt
           } > trivy-summary.txt
 
           echo "HIGH/CRITICAL 总数=$TOTAL  可修复=$FIXABLE"
@@ -109,7 +129,6 @@ jobs:
             grep -E "^[a-z0-9.-]+ +[A-Z0-9-]+ +v?[0-9]" trivy-report.txt | head -20 || true
             exit 1
           fi
-
       - name: 构建 Docker 应用包
         run: |
           set -euo pipefail
