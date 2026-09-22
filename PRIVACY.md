@@ -75,8 +75,9 @@ This is a Docker application; the statements below describe what is actually con
 `docker-compose.yml` and are verifiable there.
 
 - Web server and PHP processes run as a **non-root UID (`PUID=1000` / `PGID=1000`)**; the
-  container's init only drops privileges to that UID. The database runs under the MariaDB image's
-  own dedicated `mysql` account.
+  container's init only drops privileges to that UID. The database container works the same way:
+  its init drops privileges to uid 1000 and the MariaDB server process runs as that unprivileged
+  uid, never as root.
 - `security_opt: no-new-privileges:true` — no process can gain privileges at runtime.
 - **Capability allow-list**: `cap_drop: [ALL]` followed by an explicit `cap_add` list, instead of
   Docker's unrestricted default set. `NET_RAW`, `SETPCAP` and `SETFCAP` are **not** granted.

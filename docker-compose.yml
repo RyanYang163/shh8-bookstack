@@ -141,11 +141,17 @@ services:
           memory: 512M
 
   shh8-bookstack-db:
-    image: mariadb:11.8.9
+    # 为什么是 linuxserver/mariadb 而不是官方 mariadb：
+    # 2026-09-22 用 trivy 0.74.0 实测，官方 mariadb 的**所有**变体都带 22 个可修复
+    # HIGH/CRITICAL（11.8.9 / 11.8.9-noble / 11.4 / 10.11 均为 22，11.8.9-ubi 为 41），
+    # 而本镜像与 bookstack 同用 LinuxServer.io 的 alpine 基底，实测 0 / 0。
+    # 详见 ../../开发应用计划/TOS社区应用官方审核反馈-20260922.md
+    image: linuxserver/mariadb:11.8.8
     container_name: shh8-bookstack-db
     # This service is the only producer of the database password. The
     # application service waits for the file rather than generating its own, so
-    # the two can never disagree.
+    # the two can never disagree. The variables are exported before exec'ing the
+    # image's own /init (s6-overlay), which is where the image reads them.
     entrypoint:
       - /bin/sh
       - -c
@@ -163,29 +169,36 @@ services:
         [ -s /secret/db_password ] || gen /secret/db_password
         [ -s /secret/db_root_password ] || gen /secret/db_root_password
 
-        MARIADB_PASSWORD="$(cat /secret/db_password)"
-        MARIADB_ROOT_PASSWORD="$(cat /secret/db_root_password)"
-        export MARIADB_PASSWORD MARIADB_ROOT_PASSWORD
+        MYSQL_PASSWORD="$(cat /secret/db_password)"
+        MYSQL_ROOT_PASSWORD="$(cat /secret/db_root_password)"
+        export MYSQL_PASSWORD MYSQL_ROOT_PASSWORD
 
-        exec /usr/local/bin/docker-entrypoint.sh mariadbd
+        exec /init
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      # Simple reachability probe. Readiness beyond "the port answers" is handled
+      # by the application container's own wait loop and by BookStack's own
+      # database wait, so this stays deliberately simple — an over-strict probe
+      # that the image cannot satisfy would mark the app "Not Enabled".
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3306 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 90s
     restart: unless-stopped
     volumes:
-      - /Volume*/DockerAppData/shh8-bookstack/db:/var/lib/mysql
+      - /Volume*/DockerAppData/shh8-bookstack/db:/config
       - /Volume*/DockerAppData/shh8-bookstack/secret:/secret
     environment:
       - TZ=Asia/Shanghai
-      - MARIADB_DATABASE=bookstack
-      - MARIADB_USER=bookstack
-      # The image refuses to initialise a fresh data directory unless one of
-      # MARIADB_ROOT_PASSWORD / _HASH / ALLOW_EMPTY_ROOT_PASSWORD /
-      # RANDOM_ROOT_PASSWORD is set. MARIADB_ROOT_PASSWORD is exported by the
-      # entrypoint above; it is never written into this file.
+      # The image's s6 init drops privileges to this UID/GID; the MariaDB server
+      # process runs as uid 1000, never as root.
+      - PUID=1000
+      - PGID=1000
+      - MYSQL_DATABASE=bookstack
+      - MYSQL_USER=bookstack
+      # MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD are intentionally absent: both are
+      # generated at first start by the entrypoint above and never ship inside
+      # the package. The image requires all three of DATABASE/USER/PASSWORD.
     security_opt:
       - no-new-privileges:true
     cap_drop:

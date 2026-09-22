@@ -47,7 +47,7 @@
 |---|---|---|---|
 | `/Volume*/DockerAppData/shh8-bookstack/data` | 应用（挂 `/config`） | `.env`、日志、备份、**首次启动生成的 `app_key`** | 随数据保留，不自动过期 |
 | `/Volume*/DockerAppData/shh8-bookstack/www` | 应用（挂 `/config/www`） | 上传的附件与图片、缓存 | 同上 |
-| `/Volume*/DockerAppData/shh8-bookstack/db` | MariaDB（挂 `/var/lib/mysql`） | 知识库数据库 | 同上 |
+| `/Volume*/DockerAppData/shh8-bookstack/db` | MariaDB（挂 `/config`） | 知识库数据库 | 同上 |
 | `/Volume*/DockerAppData/shh8-bookstack/secret` | 首次启动的 entrypoint 包装 | 自动生成的数据库密码（`600`） | 同上 |
 | 容器内 `/var/log`、`/run` | 镜像自带 nginx / php-fpm | 运行期日志与 pid | 随容器生命周期 |
 
@@ -59,7 +59,7 @@
 `chown` / 降权（LinuxServer.io 官方明确不支持 `user:`），强行指定会让容器起不来。等价的最小权限措施：
 
 - `PUID=1000` / `PGID=1000` —— **nginx 与 php-fpm 的 worker 进程实际以 uid 1000 运行**；
-  数据库以 MariaDB 镜像自带的 `mysql` 账号运行；root 只用于容器初始化与绑定 80 端口；
+  数据库容器同理，MariaDB 进程以 uid 1000 运行；root 只用于容器初始化与绑定 80 端口；
 - `security_opt: no-new-privileges:true`；
 - `cap_drop: [ALL]` + `cap_add` 白名单（**不授予** `NET_RAW` / `SETPCAP` / `SETFCAP`）；
 - 无 `privileged`、无 `network_mode: host`；**数据库不发布任何端口**，只在 compose 内网可达；
